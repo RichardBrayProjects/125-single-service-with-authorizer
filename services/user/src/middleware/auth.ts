@@ -24,13 +24,10 @@ interface ExtendedRequest extends Request {
   };
 }
 
-export function attachAuth(
-  req: Request,
-  _res: Response,
-  next: NextFunction
-) {
+export function attachAuth(req: Request, _res: Response, next: NextFunction) {
   const extendedReq = req as ExtendedRequest;
-  const claims = extendedReq.apiGateway?.event?.requestContext?.authorizer?.claims;
+  const claims =
+    extendedReq.apiGateway?.event?.requestContext?.authorizer?.claims;
 
   if (claims) {
     let groups: string[] = [];
@@ -49,19 +46,15 @@ export function attachAuth(
     } as AuthUser;
   }
 
-  next();
+  return next();
 }
 
-export function requireAuth(
-  req: Request,
-  res: Response,
-  next: NextFunction
-) {
+export function requireAuth(req: Request, res: Response, next: NextFunction) {
   const auth = (req as any).auth as AuthUser | undefined;
   if (!auth || !auth.sub) {
     return res.status(401).json({ error: "Authentication required" });
   }
-  next();
+  return next();
 }
 
 export function requireGroup(groupName: string) {
@@ -70,6 +63,6 @@ export function requireGroup(groupName: string) {
     if (!auth || !auth.groups.includes(groupName)) {
       return res.status(403).json({ error: "Insufficient permissions" });
     }
-    next();
+    return next();
   };
 }

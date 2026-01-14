@@ -17,7 +17,6 @@ import {
   MockIntegration,
   CognitoUserPoolsAuthorizer,
   AuthorizationType,
-  GatewayResponse,
   ResponseType,
 } from "aws-cdk-lib/aws-apigateway";
 import { UserPool } from "aws-cdk-lib/aws-cognito";
@@ -204,8 +203,10 @@ export class ImageApiStack extends Stack {
           statusCode: "200",
           responseParameters: {
             "method.response.header.Access-Control-Allow-Origin": "'*'",
-            "method.response.header.Access-Control-Allow-Headers": "'Content-Type,Authorization'",
-            "method.response.header.Access-Control-Allow-Methods": "'GET,POST,PUT,DELETE,OPTIONS'",
+            "method.response.header.Access-Control-Allow-Headers":
+              "'Content-Type,Authorization'",
+            "method.response.header.Access-Control-Allow-Methods":
+              "'GET,POST,PUT,DELETE,OPTIONS'",
           },
         },
       ],
@@ -231,39 +232,16 @@ export class ImageApiStack extends Stack {
     const healthResource = api.root.addResource("health");
     healthResource.addMethod("GET", lambdaIntegration, {
       authorizationType: AuthorizationType.NONE,
-      methodResponses: [
-        {
-          statusCode: "200",
-          responseParameters: {
-            "method.response.header.Access-Control-Allow-Origin": true,
-            "method.response.header.Access-Control-Allow-Headers": true,
-            "method.response.header.Access-Control-Allow-Methods": true,
-          },
-        },
-      ],
-    });
-    healthResource.addMethod("OPTIONS", corsMockIntegration, {
-      ...corsMethodOptions,
-      authorizationType: AuthorizationType.NONE,
     });
 
     // V1 routes (require Cognito authentication)
     const v1Resource = api.root.addResource("v1");
-    
+
+    // SUBMIT
     const submitResource = v1Resource.addResource("submit");
     submitResource.addMethod("POST", lambdaIntegration, {
       authorizationType: AuthorizationType.COGNITO,
       authorizer: authorizer,
-      methodResponses: [
-        {
-          statusCode: "200",
-          responseParameters: {
-            "method.response.header.Access-Control-Allow-Origin": true,
-            "method.response.header.Access-Control-Allow-Headers": true,
-            "method.response.header.Access-Control-Allow-Methods": true,
-          },
-        },
-      ],
     });
     // Add OPTIONS method for CORS preflight (no auth required)
     submitResource.addMethod("OPTIONS", corsMockIntegration, {
@@ -271,20 +249,11 @@ export class ImageApiStack extends Stack {
       authorizationType: AuthorizationType.NONE,
     });
 
+    // GALLERY
     const galleryResource = v1Resource.addResource("gallery");
     galleryResource.addMethod("GET", lambdaIntegration, {
       authorizationType: AuthorizationType.COGNITO,
       authorizer: authorizer,
-      methodResponses: [
-        {
-          statusCode: "200",
-          responseParameters: {
-            "method.response.header.Access-Control-Allow-Origin": true,
-            "method.response.header.Access-Control-Allow-Headers": true,
-            "method.response.header.Access-Control-Allow-Methods": true,
-          },
-        },
-      ],
     });
     // Add OPTIONS method for CORS preflight (no auth required)
     galleryResource.addMethod("OPTIONS", corsMockIntegration, {
@@ -292,26 +261,15 @@ export class ImageApiStack extends Stack {
       authorizationType: AuthorizationType.NONE,
     });
 
-    // Add gateway responses with CORS headers for authorizer errors
-    // This ensures CORS headers are present even when API Gateway rejects requests before they reach Lambda
+    // Add gateway responses for authorizer errors
     api.addGatewayResponse("UnauthorizedGatewayResponse", {
       type: ResponseType.UNAUTHORIZED,
       statusCode: "401",
-      responseHeaders: {
-        "Access-Control-Allow-Origin": "'*'",
-        "Access-Control-Allow-Headers": "'Content-Type,Authorization'",
-        "Access-Control-Allow-Methods": "'GET,POST,PUT,DELETE,OPTIONS'",
-      },
     });
 
     api.addGatewayResponse("AccessDeniedGatewayResponse", {
       type: ResponseType.ACCESS_DENIED,
       statusCode: "403",
-      responseHeaders: {
-        "Access-Control-Allow-Origin": "'*'",
-        "Access-Control-Allow-Headers": "'Content-Type,Authorization'",
-        "Access-Control-Allow-Methods": "'GET,POST,PUT,DELETE,OPTIONS'",
-      },
     });
 
     new CfnOutput(this, "ApiUrl", {
