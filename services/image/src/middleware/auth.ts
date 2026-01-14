@@ -1,61 +1,74 @@
 import { Request, Response, NextFunction } from "express";
 
+// Authentication works like this ...
+//
+// Browser
+//   └─ Authorization: Bearer <JWT>
+
+// API Gateway (REST, v1)
+//   └─ Cognito User Pool Authorizer
+//       └─ Injects claims into event.requestContext.authorizer
+
+// Lambda
+//   └─ vendia serverless-express
+//       └─ tracks current invocation
+//           └─ getCurrentInvoke()
+//               └─ event.requestContext.authorizer.claims
+
+// Express
+//   └─ attachAuth middleware
+//       └─ req.auth
+//           └─ controllers
+
+// Vendia exposes getCurrentInvoke(), but TS exports can be awkward depending on version.
+// This require() pattern is the most robust in TS projects.
+const { getCurrentInvoke } = require("@vendia/serverless-express");
+
 export interface AuthUser {
   sub: string;
   email?: string;
   groups: string[];
 }
 
-interface ApiGatewayEvent {
-  requestContext: {
-    authorizer?: {
-      claims?: {
-        sub?: string;
-        email?: string;
-        "cognito:groups"?: string | string[];
-      };
-    };
-  };
-}
+type Claims = {
+  sub?: string;
+  email?: string;
+  "cognito:groups"?: string | string[];
+};
 
-interface ExtendedRequest extends Request {
-  apiGateway?: {
-    event: ApiGatewayEvent;
-  };
+function parseGroups(raw: Claims["cognito:groups"]): string[] {
+  if (!raw) return [];
+  if (Array.isArray(raw)) return raw;
+  if (typeof raw === "string") {
+    return raw
+      .split(",")
+      .map((g) => g.trim())
+      .filter(Boolean);
+  }
+  return [];
 }
 
 export function attachAuth(req: Request, _res: Response, next: NextFunction) {
-  const extendedReq = req as ExtendedRequest;
-  const claims =
-    extendedReq.apiGateway?.event?.requestContext?.authorizer?.claims;
+  // getCurrentInvoke() returns { event, context } for the current Lambda invocation. :contentReference[oaicite:1]{index=1}
+  const invoke = getCurrentInvoke?.();
+  const event = invoke?.event;
 
-  if (claims) {
-    let groups: string[] = [];
-    if (claims["cognito:groups"]) {
-      if (typeof claims["cognito:groups"] === "string") {
-        groups = claims["cognito:groups"].split(",").map((g) => g.trim());
-      } else if (Array.isArray(claims["cognito:groups"])) {
-        groups = claims["cognito:groups"];
-      }
-    }
+  const claims: Claims | undefined = event?.requestContext?.authorizer?.claims;
 
+  if (claims?.sub) {
     (req as any).auth = {
-      sub: claims.sub || "",
+      sub: claims.sub,
       email: claims.email,
-      groups,
+      groups: parseGroups(claims["cognito:groups"]),
     } as AuthUser;
   }
 
-  return next();
+  next();
 }
 
 export function requireAuth(req: Request, res: Response, next: NextFunction) {
   const auth = (req as any).auth as AuthUser | undefined;
-  if (!auth || !auth.sub) {
-    // Add CORS headers to error response
-    // res.header("Access-Control-Allow-Origin", "*");
-    // res.header("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS");
-    // res.header("Access-Control-Allow-Headers", "Content-Type,Authorization");
+  if (!auth?.sub) {
     return res.status(401).json({ error: "Authentication required" });
   }
   return next();
@@ -64,11 +77,7 @@ export function requireAuth(req: Request, res: Response, next: NextFunction) {
 export function requireGroup(groupName: string) {
   return (req: Request, res: Response, next: NextFunction) => {
     const auth = (req as any).auth as AuthUser | undefined;
-    if (!auth || !auth.groups.includes(groupName)) {
-      // Add CORS headers to error response
-      // res.header("Access-Control-Allow-Origin", "*");
-      // res.header("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS");
-      // res.header("Access-Control-Allow-Headers", "Content-Type,Authorization");
+    if (!auth?.groups?.includes(groupName)) {
       return res.status(403).json({ error: "Insufficient permissions" });
     }
     return next();

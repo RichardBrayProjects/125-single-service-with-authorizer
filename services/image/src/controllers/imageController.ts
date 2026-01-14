@@ -5,8 +5,6 @@ import { v4 as uuidv4 } from "uuid";
 import { AuthUser } from "../middleware/auth";
 import { queryDatabase } from "../utils/db";
 
-// S3Client must use us-east-1 region where the bucket is located
-// (bucket is created by CloudFront stack in us-east-1, but Lambda runs in eu-west-2)
 const S3_BUCKET_REGION = process.env.S3_BUCKET_REGION || "us-east-1";
 const s3Client = new S3Client({ region: S3_BUCKET_REGION });
 
@@ -22,36 +20,35 @@ export async function submitHandler(
   res: Response,
   next: NextFunction
 ) {
-  console.log("====================================");
-  console.log("ENTERED router.post(/submit)");
-  console.log("====================================");
+  console.log("ENTERED POST /v1/submit");
 
   try {
-    // Auth is guaranteed by requireAuth middleware, so we can safely access it
     const auth = (req as any).auth as AuthUser;
-    // Use sub as username (Cognito user identifier)
     const username = auth.sub;
     const { imageName } = req.body;
-
-    console.log(`Authenticated user - username: ${username}`);
 
     if (!imageName || typeof imageName !== "string") {
       return res.status(400).json({ error: "Image name is required" });
     }
-
     if (imageName.length > 40) {
       return res
         .status(400)
         .json({ error: "Image name must be 40 characters or less" });
     }
-
     if (!S3_BUCKET_NAME) {
-      console.error("S3_BUCKET_NAME environment variable not set");
-      return res.status(500).json({ error: "Server configuration error" });
+      return res
+        .status(500)
+        .json({ error: "Server configuration error (S3_BUCKET_NAME missing)" });
+    }
+    if (!CLOUDFRONT_DOMAIN) {
+      return res
+        .status(500)
+        .json({
+          error: "Server configuration error (CLOUDFRONT_DOMAIN missing)",
+        });
     }
 
     const uuidFilename = uuidv4();
-    console.log(`Generated UUID filename: ${uuidFilename}`);
 
     const putObjectCommand = new PutObjectCommand({
       Bucket: S3_BUCKET_NAME,
@@ -63,33 +60,21 @@ export async function submitHandler(
       expiresIn: 900,
     });
 
-    console.log(`Generated presigned URL for key: ${uuidFilename}`);
-
-    // Insert image record into database
-    const result = await queryDatabase<{
-      id: number;
-      created_at: string;
-    }>(
+    const result = await queryDatabase<{ id: number; created_at: string }>(
       "INSERT INTO images (username, uuid_filename, image_name, created_at) VALUES ($1, $2, $3, NOW()) RETURNING id, created_at",
       [username, uuidFilename, imageName.trim()]
     );
 
     if (result.rows.length === 0) {
-      console.error("Failed to insert image record into database");
       return res.status(500).json({ error: "Failed to create image record" });
     }
-
-    const imageRecord = result.rows[0];
-
-    console.log(
-      `Successfully created presigned URL for user: ${username}, image: ${imageName}`
-    );
 
     res.status(200).json({
       success: true,
       presignedUrl,
-      imageId: imageRecord.id,
+      imageId: result.rows[0].id,
       uuidFilename,
+      cloudfrontUrl: generateCloudFrontUrl(uuidFilename),
       message: "Presigned URL generated successfully",
     });
   } catch (err) {
@@ -102,17 +87,9 @@ export async function galleryHandler(
   res: Response,
   next: NextFunction
 ) {
-  console.log("====================================");
-  console.log("ENTERED router.get(/gallery)");
-  console.log("====================================");
+  console.log("ENTERED GET /v1/gallery");
 
   try {
-    // Auth is guaranteed by requireAuth middleware, so we can safely access it
-    const auth = (req as any).auth as AuthUser;
-    const username = auth.sub;
-    console.log(`Authenticated user - username: ${username}`);
-
-    // Get limit from query params, default to 100
     const limit = parseInt(req.query.limit as string) || 100;
     if (limit < 1 || limit > 1000) {
       return res
@@ -120,9 +97,6 @@ export async function galleryHandler(
         .json({ error: "Limit must be between 1 and 1000" });
     }
 
-    console.log(`Fetching all images with limit: ${limit}`);
-
-    // Get all images with user nicknames
     const result = await queryDatabase<{
       id: number;
       username: string;
@@ -145,10 +119,7 @@ export async function galleryHandler(
       [limit]
     );
 
-    const images = result.rows;
-    console.log(`Found ${images.length} total images in system`);
-
-    const imagesWithCloudFrontUrls = images.map((image) => ({
+    const images = result.rows.map((image) => ({
       id: image.id,
       username: image.username,
       nickname: image.nickname || null,
@@ -157,16 +128,10 @@ export async function galleryHandler(
       cloudfront_url: generateCloudFrontUrl(image.uuid_filename),
     }));
 
-    console.log(
-      `Loaded All Image Data from Database: ${JSON.stringify(
-        imagesWithCloudFrontUrls
-      )}`
-    );
-
     res.status(200).json({
       success: true,
-      images: imagesWithCloudFrontUrls,
-      count: imagesWithCloudFrontUrls.length,
+      images,
+      count: images.length,
     });
   } catch (err) {
     return next(err);

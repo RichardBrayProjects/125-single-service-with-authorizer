@@ -14,10 +14,10 @@ import {
   EndpointType,
   SecurityPolicy,
   LambdaIntegration,
-  MockIntegration,
   CognitoUserPoolsAuthorizer,
   AuthorizationType,
   ResponseType,
+  Cors,
 } from "aws-cdk-lib/aws-apigateway";
 import { UserPool } from "aws-cdk-lib/aws-cognito";
 import { PolicyStatement } from "aws-cdk-lib/aws-iam";
@@ -58,9 +58,9 @@ export class ImageApiStack extends Stack {
       imagesCloudFrontDomain,
     } = props;
 
-    if (!hostedZoneName || !hostedZoneId || !domainName) {
+    if (!hostedZoneName || !hostedZoneId || !domainName || !apiSubdomain) {
       throw new Error(
-        "Unexpected missing hostedZone || hostedZoneId || domainName"
+        "Unexpected missing hostedZoneName || hostedZoneId || domainName || apiSubdomain"
       );
     }
 
@@ -69,31 +69,22 @@ export class ImageApiStack extends Stack {
     const zone = HostedZone.fromHostedZoneAttributes(
       this,
       "ImportedHostedZone",
-      {
-        hostedZoneId,
-        zoneName: hostedZoneName,
-      }
+      { hostedZoneId, zoneName: hostedZoneName }
     );
 
-    // Create certificate for API subdomain
     const certificate = new Certificate(this, "ApiCertificate", {
       domainName: apiDomainName,
       validation: CertificateValidation.fromDns(zone),
     });
-    // Retain certificate on stack deletion to avoid deletion failures
-    // when it's still attached to API Gateway domain
     certificate.applyRemovalPolicy(RemovalPolicy.RETAIN);
 
     const environment: Record<string, string> = {
       RDS_DB_NAME: dbname,
       S3_BUCKET_NAME: imagesS3BucketName,
       CLOUDFRONT_DOMAIN: imagesCloudFrontDomain,
-      // S3 bucket is in us-east-1 (created by CloudFront stack)
-      // Lambda runs in eu-west-2, so we need to explicitly set the S3 region
       S3_BUCKET_REGION: "us-east-1",
     };
 
-    // Create Lambda function using NodejsFunction for automatic bundling
     const lambdaFunction = new NodejsFunction(this, "ImageServiceFunction", {
       entry: "../services/image/src/index.ts",
       handler: "handler",
@@ -119,7 +110,6 @@ export class ImageApiStack extends Stack {
       environment,
     });
 
-    // Grant Lambda access to SSM to read RDS secret ARN
     lambdaFunction.addToRolePolicy(
       new PolicyStatement({
         actions: ["ssm:GetParameter"],
@@ -129,7 +119,6 @@ export class ImageApiStack extends Stack {
       })
     );
 
-    // Grant Lambda access to Secrets Manager for RDS credentials
     lambdaFunction.addToRolePolicy(
       new PolicyStatement({
         actions: ["secretsmanager:GetSecretValue"],
@@ -139,7 +128,6 @@ export class ImageApiStack extends Stack {
       })
     );
 
-    // Grant Lambda access to S3
     lambdaFunction.addToRolePolicy(
       new PolicyStatement({
         actions: ["s3:PutObject"],
@@ -147,29 +135,27 @@ export class ImageApiStack extends Stack {
       })
     );
 
-    // Create API Gateway
     const api = new RestApi(this, "ImageApi", {
       restApiName: "Image Service API",
       description: "API Gateway for Image Service",
-      endpointConfiguration: {
-        types: [EndpointType.REGIONAL],
+      endpointConfiguration: { types: [EndpointType.REGIONAL] },
+
+      defaultCorsPreflightOptions: {
+        allowOrigins: Cors.ALL_ORIGINS,
+        allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        allowHeaders: ["Content-Type", "Authorization"],
       },
     });
 
-    // Create custom domain
     const apiDomain = new DomainName(this, "ApiDomain", {
       domainName: apiDomainName,
-      certificate: certificate,
+      certificate,
       securityPolicy: SecurityPolicy.TLS_1_2,
       endpointType: EndpointType.REGIONAL,
     });
 
-    // Create base path mapping
-    apiDomain.addBasePathMapping(api, {
-      basePath: "",
-    });
+    apiDomain.addBasePathMapping(api, { basePath: "" });
 
-    // Create Route53 records
     new ARecord(this, "ApiARecord", {
       zone,
       recordName: apiSubdomain,
@@ -182,7 +168,6 @@ export class ImageApiStack extends Stack {
       target: RecordTarget.fromAlias(new ApiGatewayDomain(apiDomain)),
     });
 
-    // Create Cognito authorizer
     const authorizer = new CognitoUserPoolsAuthorizer(
       this,
       "CognitoAuthorizer",
@@ -196,98 +181,48 @@ export class ImageApiStack extends Stack {
       proxy: true,
     });
 
-    // Create a MockIntegration for OPTIONS requests (CORS preflight)
-    const corsMockIntegration = new MockIntegration({
-      integrationResponses: [
-        {
-          statusCode: "200",
-          responseParameters: {
-            "method.response.header.Access-Control-Allow-Origin": "'*'",
-            "method.response.header.Access-Control-Allow-Headers":
-              "'Content-Type,Authorization'",
-            "method.response.header.Access-Control-Allow-Methods":
-              "'GET,POST,PUT,DELETE,OPTIONS'",
-          },
-        },
-      ],
-      requestTemplates: {
-        "application/json": '{"statusCode": 200}',
-      },
-    });
-
-    const corsMethodOptions = {
-      methodResponses: [
-        {
-          statusCode: "200",
-          responseParameters: {
-            "method.response.header.Access-Control-Allow-Origin": true,
-            "method.response.header.Access-Control-Allow-Headers": true,
-            "method.response.header.Access-Control-Allow-Methods": true,
-          },
-        },
-      ],
-    };
-
-    // Health endpoint (public, no auth required)
     const healthResource = api.root.addResource("health");
     healthResource.addMethod("GET", lambdaIntegration, {
       authorizationType: AuthorizationType.NONE,
     });
 
-    // V1 routes (require Cognito authentication)
     const v1Resource = api.root.addResource("v1");
 
-    // SUBMIT
     const submitResource = v1Resource.addResource("submit");
     submitResource.addMethod("POST", lambdaIntegration, {
       authorizationType: AuthorizationType.COGNITO,
-      authorizer: authorizer,
-    });
-    // Add OPTIONS method for CORS preflight (no auth required)
-    submitResource.addMethod("OPTIONS", corsMockIntegration, {
-      ...corsMethodOptions,
-      authorizationType: AuthorizationType.NONE,
+      authorizer,
     });
 
-    // GALLERY
     const galleryResource = v1Resource.addResource("gallery");
     galleryResource.addMethod("GET", lambdaIntegration, {
       authorizationType: AuthorizationType.COGNITO,
-      authorizer: authorizer,
-    });
-    // Add OPTIONS method for CORS preflight (no auth required)
-    galleryResource.addMethod("OPTIONS", corsMockIntegration, {
-      ...corsMethodOptions,
-      authorizationType: AuthorizationType.NONE,
+      authorizer,
     });
 
-    // Add gateway responses for authorizer errors
     api.addGatewayResponse("UnauthorizedGatewayResponse", {
       type: ResponseType.UNAUTHORIZED,
       statusCode: "401",
+      responseHeaders: {
+        "Access-Control-Allow-Origin": "'*'",
+        "Access-Control-Allow-Headers": "'Content-Type,Authorization'",
+        "Access-Control-Allow-Methods": "'GET,POST,PUT,DELETE,OPTIONS'",
+      },
     });
 
     api.addGatewayResponse("AccessDeniedGatewayResponse", {
       type: ResponseType.ACCESS_DENIED,
       statusCode: "403",
+      responseHeaders: {
+        "Access-Control-Allow-Origin": "'*'",
+        "Access-Control-Allow-Headers": "'Content-Type,Authorization'",
+        "Access-Control-Allow-Methods": "'GET,POST,PUT,DELETE,OPTIONS'",
+      },
     });
 
-    new CfnOutput(this, "ApiUrl", {
-      value: `https://${apiDomainName}`,
-    });
-
-    new CfnOutput(this, "ApiGatewayUrl", {
-      value: api.url,
-    });
-
-    new CfnOutput(this, "UserPoolArn", {
-      value: props.userPool.userPoolArn,
-      description: "User Pool ARN used by the authorizer",
-    });
-
-    new CfnOutput(this, "UserPoolId", {
-      value: props.userPool.userPoolId,
-      description: "User Pool ID used by the authorizer",
-    });
+    new CfnOutput(this, "ApiUrl", { value: `https://${apiDomainName}` });
+    new CfnOutput(this, "ApiGatewayUrl", { value: api.url });
+    new CfnOutput(this, "UserPoolArn", { value: props.userPool.userPoolArn });
+    new CfnOutput(this, "UserPoolId", { value: props.userPool.userPoolId });
   }
 }
