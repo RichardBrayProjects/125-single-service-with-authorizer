@@ -43,14 +43,6 @@ export const sessionStorage = {
     return window.sessionStorage.getItem(STATE_KEY);
   },
 
-  setRedirectUri: (uri: string): void => {
-    window.sessionStorage.setItem(REDIRECT_URI_KEY, uri);
-  },
-
-  getRedirectUri: (): string | null => {
-    return window.sessionStorage.getItem(REDIRECT_URI_KEY);
-  },
-
   // Cleanup operations
   removeCodeVerifier: (): void => {
     window.sessionStorage.removeItem(CODE_VERIFIER_KEY);
@@ -58,10 +50,6 @@ export const sessionStorage = {
 
   removeState: (): void => {
     window.sessionStorage.removeItem(STATE_KEY);
-  },
-
-  removeRedirectUri: (): void => {
-    window.sessionStorage.removeItem(REDIRECT_URI_KEY);
   },
 
   clearAll: (): void => {

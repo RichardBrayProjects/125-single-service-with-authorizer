@@ -12,7 +12,6 @@
     "destroy-images-cloudfront": "cdk destroy system-images-cloudfront --force --require-approval never --app 'tsx ./src/bin/images-cloudfront.ts'",
     "destroy-services": "cdk destroy --all --force --require-approval never --app 'tsx ./src/bin/services.ts'",
     "destroy-rds": "cdk destroy system-rds --force --require-approval never --app 'tsx ./src/bin/rds.ts'",
-    "update-s3-cors": "tsx scripts/update-s3-cors.ts",
     "type-check": "tsc --noEmit"
   },
   "dependencies": {

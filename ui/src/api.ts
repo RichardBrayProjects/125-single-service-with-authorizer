@@ -24,17 +24,18 @@ export async function startLogin(): Promise<void> {
   const state = generateState();
   const codeVerifier = generateCodeVerifier();
   const codeChallenge = await generateCodeChallenge(codeVerifier);
-  const redirectUri = getRedirectUri();
 
   sessionStorage.setCodeVerifier(codeVerifier);
   sessionStorage.setState(state);
-  sessionStorage.setRedirectUri(redirectUri);
 
   const authUrl = new URL(`${COGNITO_DOMAIN}/oauth2/authorize`);
   authUrl.searchParams.set("client_id", COGNITO_CLIENT_ID);
   authUrl.searchParams.set("response_type", "code");
   authUrl.searchParams.set("scope", "openid email");
-  authUrl.searchParams.set("redirect_uri", redirectUri);
+  authUrl.searchParams.set(
+    "redirect_uri",
+    `${window.location.origin}/callback`
+  );
   authUrl.searchParams.set("state", state);
   authUrl.searchParams.set("code_challenge", codeChallenge);
   authUrl.searchParams.set("code_challenge_method", "S256");
@@ -52,19 +53,16 @@ async function exchangeCodeForTokens(
 
   const storedState = sessionStorage.getState();
   const codeVerifier = sessionStorage.getCodeVerifier();
-  const storedRedirectUri = sessionStorage.getRedirectUri();
 
   if (!storedState || state !== storedState || !codeVerifier) {
     throw new Error("Invalid state or missing code verifier");
   }
 
-  const redirectUri = storedRedirectUri || getRedirectUri();
-
   const tokenParams = new URLSearchParams({
     grant_type: "authorization_code",
     client_id: COGNITO_CLIENT_ID,
     code: code,
-    redirect_uri: redirectUri,
+    redirect_uri: `${window.location.origin}/callback`,
     code_verifier: codeVerifier,
   });
 
@@ -82,7 +80,6 @@ async function exchangeCodeForTokens(
   const tokens = await response.json();
   sessionStorage.removeCodeVerifier();
   sessionStorage.removeState();
-  sessionStorage.removeRedirectUri();
   return tokens;
 }
 
@@ -133,7 +130,7 @@ export async function authenticatedFetch(
   const idToken = sessionStorage.getIdToken();
   const accessToken = getAccessToken();
   const token = idToken || accessToken;
-  
+
   if (!token) {
     throw new Error("No token available");
   }
@@ -176,8 +173,4 @@ export async function handleOAuthCallback(
   }
 
   return user;
-}
-
-function getRedirectUri(): string {
-  return `${window.location.origin}/callback`;
 }
