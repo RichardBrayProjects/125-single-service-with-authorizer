@@ -1,0 +1,22 @@
+{
+  "name": "root",
+  "version": "1.0.0",
+  "scripts": {
+    "build": "pnpm -r --filter './services/**' --filter './ui' build",
+    "type-check": "pnpm -r --filter './services/**' --filter './ui' type-check",
+    "bootstrap-up": "pnpm -C system-cdk/scripts run bootstrap-up",
+    "boot-down": "pnpm -C system-cdk/scripts run bootstrap-down",
+    "deploy-rds": "pnpm -C system-cdk run deploy-rds",
+    "migrate-rds": "pnpm -C system-cdk/scripts run migrate-database",
+    "deploy-ui-cloudfront": "pnpm -C system-cdk run deploy-ui-cloudfront",
+    "deploy-images-cloudfront": "pnpm -C system-cdk run deploy-images-cloudfront",
+    "deploy-services": "pnpm -C system-cdk run deploy-services",
+    "deploy-ui": "pnpm -C ui run deploy",
+    "deploy-all": "pnpm deploy-rds && pnpm migrate-rds && pnpm deploy-ui-cloudfront && pnpm deploy-images-cloudfront && pnpm deploy-services && pnpm deploy-ui",
+    "destroy-rds": "pnpm -C system-cdk run destroy-rds",
+    "destroy-services": "pnpm -C system-cdk run destroy-services",
+    "destroy-ui-cloudfront": "pnpm -C system-cdk run destroy-ui-cloudfront",
+    "destroy-images-cloudfront": "pnpm -C system-cdk run destroy-images-cloudfront",
+    "destroy-all": "pnpm destroy-services && pnpm destroy-images-cloudfront && pnpm destroy-ui-cloudfront && pnpm destroy-rds"
+  }
+}
