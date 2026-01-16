@@ -11,19 +11,18 @@ if [ "${1:-}" = "--repair" ]; then
   FLYWAY_COMMAND="repair"
 fi
 
-# --------------------------
-# Local JSON query helper (no jq, no chmod, no PATH magic)
-# Assumes jsonQuery.js is in the same folder as this script.
-# --------------------------
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-JSON_QUERY="node \"$SCRIPT_DIR/jsonQuery.js\""
-
 # Configuration
 RETRIES=2
 SLEEP_SECONDS=3
 DB_PORT=5432
 SQL_SCRIPTS_DIR="${SQL_SCRIPTS_DIR:-../migrations}"
 RDS_DB_NAME="${RDS_DB_NAME:-uptickart}"
+
+# --- Pre-requisite checks ---
+command -v jq >/dev/null 2>&1 || { echo >&2 "Error: 'jq' is required."; exit 1; }
+command -v flyway >/dev/null 2>&1 || { echo >&2 "Error: 'flyway' CLI is required."; exit 1; }
+command -v aws >/dev/null 2>&1 || { echo >&2 "Error: 'aws' CLI is required."; exit 1; }
+command -v psql >/dev/null 2>&1 || { echo >&2 "Error: 'psql' is required."; exit 1; }
 
 # --- Retrieve secret ARN from SSM Parameter Store ---
 echo "Retrieving secret ARN from SSM Parameter Store..."
@@ -39,10 +38,10 @@ SECRET_JSON=$(aws secretsmanager get-secret-value \
   --query "SecretString" \
   --output text)
 
-# Parse credentials from JSON (using node + local jsonQuery.js)
-RDS_ENDPOINT=$(printf '%s' "$SECRET_JSON" | eval $JSON_QUERY .host)
-RDS_USERNAME=$(printf '%s' "$SECRET_JSON" | eval $JSON_QUERY .username)
-RDS_PASSWORD=$(printf '%s' "$SECRET_JSON" | eval $JSON_QUERY .password)
+# Parse credentials from JSON (using jq)
+RDS_ENDPOINT=$(printf '%s' "$SECRET_JSON" | jq -r '.host')
+RDS_USERNAME=$(printf '%s' "$SECRET_JSON" | jq -r '.username')
+RDS_PASSWORD=$(printf '%s' "$SECRET_JSON" | jq -r '.password')
 
 # Set PGPASSWORD environment variable so psql doesn't prompt for password
 export PGPASSWORD="$RDS_PASSWORD"
@@ -75,10 +74,6 @@ JDBC_URL="jdbc:postgresql://${RDS_ENDPOINT}:${DB_PORT}/$RDS_DB_NAME"
 echo "Preparing to $FLYWAY_COMMAND remote database"
 echo "Username: $RDS_USERNAME"
 echo "JDBC URL: $JDBC_URL"
-
-# --- Pre-requisite checks ---
-command -v node >/dev/null 2>&1 || { echo >&2 "Error: 'node' is required."; exit 1; }
-command -v flyway >/dev/null 2>&1 || { echo >&2 "Error: 'flyway' CLI is required."; exit 1; }
 
 # --- Run Flyway command directly ---
 flyway \
