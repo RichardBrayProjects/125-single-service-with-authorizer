@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import * as cdk from "aws-cdk-lib";
-import { RdsStack } from "../lib/rdsAuroraStack";
+import { RdsStack } from "../lib/rdsStackAuroraServerless";
 
 const app = new cdk.App();
 

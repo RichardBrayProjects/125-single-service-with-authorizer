@@ -4,6 +4,7 @@
   "scripts": {
     "bootstrap-up": "sh bootstrap-up.sh",
     "bootstrap-down": "sh bootstrap-down.sh",
-    "migrate-database": "sh migrate-database.sh"
+    "migrate-database": "sh migrate-database.sh",
+    "repair-database": "sh migrate-database.sh --repair"
   }
 }

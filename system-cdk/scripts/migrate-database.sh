@@ -2,6 +2,22 @@
 
 set -euo pipefail
 
+# --------------------------
+# Mode selection
+# --------------------------
+FLYWAY_COMMAND="migrate"
+
+if [ "${1:-}" = "--repair" ]; then
+  FLYWAY_COMMAND="repair"
+fi
+
+# --------------------------
+# Local JSON query helper (no jq, no chmod, no PATH magic)
+# Assumes jsonQuery.js is in the same folder as this script.
+# --------------------------
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+JSON_QUERY="node \"$SCRIPT_DIR/jsonQuery.js\""
+
 # Configuration
 RETRIES=2
 SLEEP_SECONDS=3
@@ -23,10 +39,10 @@ SECRET_JSON=$(aws secretsmanager get-secret-value \
   --query "SecretString" \
   --output text)
 
-# Parse credentials from JSON
-RDS_ENDPOINT=$(echo "$SECRET_JSON" | jq -r '.host')
-RDS_USERNAME=$(echo "$SECRET_JSON" | jq -r '.username')
-RDS_PASSWORD=$(echo "$SECRET_JSON" | jq -r '.password')
+# Parse credentials from JSON (using node + local jsonQuery.js)
+RDS_ENDPOINT=$(printf '%s' "$SECRET_JSON" | eval $JSON_QUERY .host)
+RDS_USERNAME=$(printf '%s' "$SECRET_JSON" | eval $JSON_QUERY .username)
+RDS_PASSWORD=$(printf '%s' "$SECRET_JSON" | eval $JSON_QUERY .password)
 
 # Set PGPASSWORD environment variable so psql doesn't prompt for password
 export PGPASSWORD="$RDS_PASSWORD"
@@ -56,21 +72,21 @@ echo ""
 
 JDBC_URL="jdbc:postgresql://${RDS_ENDPOINT}:${DB_PORT}/$RDS_DB_NAME"
 
-echo "Preparing to upgrade remote database"
+echo "Preparing to $FLYWAY_COMMAND remote database"
 echo "Username: $RDS_USERNAME"
 echo "JDBC URL: $JDBC_URL"
 
 # --- Pre-requisite checks ---
-command -v jq >/dev/null 2>&1 || { echo >&2 "Error: 'jq' is required."; exit 1; }
+command -v node >/dev/null 2>&1 || { echo >&2 "Error: 'node' is required."; exit 1; }
 command -v flyway >/dev/null 2>&1 || { echo >&2 "Error: 'flyway' CLI is required."; exit 1; }
 
-# --- Run Flyway migration directly ---
+# --- Run Flyway command directly ---
 flyway \
   -connectRetries=$RETRIES \
   -url="$JDBC_URL" \
   -user="$RDS_USERNAME" \
   -password="$RDS_PASSWORD" \
   -locations="filesystem:$SQL_SCRIPTS_DIR" \
-  migrate
+  "$FLYWAY_COMMAND"
 
-echo "✅ Flyway migration complete"
+echo "✅ Flyway $FLYWAY_COMMAND complete"
