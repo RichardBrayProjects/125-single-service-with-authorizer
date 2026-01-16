@@ -1,8 +1,10 @@
 import { useAuth } from "@/contexts/AuthContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useEffect, useState } from "react";
-import imageService, { type ClientImageRecord, MAX_IMAGES } from "@/services/imageService";
-import { toast } from "sonner";
+import imageService, {
+  type ClientImageRecord,
+  MAX_IMAGES,
+} from "@/services/imageService";
 
 export default () => {
   const { loading: authLoading, user } = useAuth();
@@ -32,7 +34,8 @@ export default () => {
           setError(response.message || "Failed to load images");
         }
       } catch (err) {
-        const message = err instanceof Error ? err.message : "Failed to load images";
+        const message =
+          err instanceof Error ? err.message : "Failed to load images";
         setError(message);
         console.error("Error fetching images:", err);
       } finally {
@@ -67,7 +70,9 @@ export default () => {
       <h1 className="text-4xl font-bold mb-4">🎨 Uptick Art Gallery</h1>
       <p className="text-muted-foreground text-lg mb-8">
         {images.length > 0
-          ? `Showing ${images.length} ${images.length === 1 ? "image" : "images"}`
+          ? `Showing ${images.length} ${
+              images.length === 1 ? "image" : "images"
+            }`
           : "Welcome to our digital art collection"}
       </p>
 
@@ -87,7 +92,10 @@ export default () => {
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         {images.map((image) => (
-          <Card key={image.id} className="hover:shadow-lg transition-shadow overflow-hidden">
+          <Card
+            key={image.id}
+            className="hover:shadow-lg transition-shadow overflow-hidden"
+          >
             <div className="aspect-square relative bg-muted">
               <img
                 src={image.cloudfront_url}
@@ -106,7 +114,9 @@ export default () => {
               />
             </div>
             <CardHeader>
-              <CardTitle className="text-lg line-clamp-2">{image.image_name}</CardTitle>
+              <CardTitle className="text-lg line-clamp-2">
+                {image.image_name}
+              </CardTitle>
             </CardHeader>
             <CardContent>
               <p className="text-sm text-muted-foreground">
