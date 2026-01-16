@@ -6,4 +6,4 @@ CREATE TABLE IF NOT EXISTS users (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-INSERT INTO users (username, email, nickname) VALUES ('rjbray2', 'rjbray2@gmail.com','dicky');
+INSERT INTO users (username, email, nickname) VALUES ('noddy', 'noddy@gmail.com','noddy');

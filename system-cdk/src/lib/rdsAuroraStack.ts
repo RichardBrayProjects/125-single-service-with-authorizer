@@ -18,7 +18,6 @@ export class RdsStack extends Stack {
     // VPC Configuration
     // --------------------------
     // Aurora (like RDS) needs subnets in at least 2 AZs, so keep maxAzs: 2.
-    // You currently have only public subnets and no NAT, so we keep that the same.
     const vpc = new ec2.Vpc(this, "RdsVpc", {
       maxAzs: 2,
       natGateways: 0,
@@ -58,21 +57,6 @@ export class RdsStack extends Stack {
     const engine = rds.DatabaseClusterEngine.auroraPostgres({
       version: rds.AuroraPostgresEngineVersion.VER_17_4,
     });
-
-    // --------------------------
-    // Parameter Groups
-    // --------------------------
-    // For Aurora, settings like rds.force_ssl are typically cluster-level.
-    const clusterParameterGroup = new rds.ParameterGroup(
-      this,
-      "AuroraClusterParameterGroup",
-      {
-        engine,
-        parameters: {
-          "rds.force_ssl": "0",
-        },
-      }
-    );
 
     // --------------------------
     // Aurora Serverless v2 Cluster
